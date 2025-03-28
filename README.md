@@ -10,7 +10,7 @@ Here I:
 3) Filter out reads failing 3 or more tests in 2)
 4) Align high quality reads to genome using STAR
 5) Calculate expression:
-   counts: with HTSEQ
+   counts: with HTSEQ   
    TPM: with RSEM
 
 I start with FASTQ files and end with an expression matrix
