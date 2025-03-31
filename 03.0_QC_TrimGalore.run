@@ -1,0 +1,88 @@
+#!/bin/bash
+
+#SBATCH -A sens2018122
+#SBATCH -p core
+#SBATCH -n 2
+#SBATCH -t 24:00:00
+#SBATCH --mail-user=maria.arceo@ki.se
+#SBATCH --mail-type=ALL
+#SBATCH -J 03.0_QC_trim_galore
+#SBATCH --output=03.0_QC_trim_galore_%J.stdout
+#---------------------------------------------------------------------#
+
+# Load software modules
+module load R/4.0.0
+module load R_packages/4.0.0
+#---------------------------------------------------------------------#
+
+# slurm arguments
+if [ ! -z "$SLURM_JOB_ID" ] && [ ! "$SLURM_JOB_NAME" = "_interactive" ]
+then
+	START=${SLURM_ARRAY_TASK_ID}
+	NUMLINES=${NUMLINES}
+	STOP=$((SLURM_ARRAY_TASK_ID*NUMLINES))
+	START="$(($STOP - $(($NUMLINES - 1))))"
+	
+	echo "JOB_NAME=${SLURM_JOB_NAME}"
+	echo "JOB_ID=${SLURM_ARRAY_JOB_ID}"
+	echo "TASK_ID=${SLURM_ARRAY_TASK_ID}"
+	echo "LINE START=${START}"
+	echo "LINE STOP=${STOP}"
+fi
+#-----------------------------------------------------------------------#
+
+# EXPORTED VARIABLES
+args1="${args1}"
+args2="${args2}"
+args3="${args3}"
+#-----------------------------------------------------------------------#
+
+# Code and logs directories
+codedir="${codedir}"
+logdir="${logdir}/"
+outdir="${outdir}/"
+lognm="${lognm}" 
+#-----------------------------------------------------------------------#
+
+# Print arguments passed
+var_=$( echo "$(compgen -v | grep -i args -)" )
+read -d " " -a  var_array <<< "$var_"
+echo "VARIABLES EXPORTED:"
+for i in ${var_array[@]}
+do
+	eval temp='$'$i
+	echo "$i: $temp"
+done
+unset var_ var_array i temp
+#-----------------------------------------------------------------------#
+
+# Run
+echo "This is job ${SLURM_ARRAY_JOB_ID} task ${SLURM_ARRAY_TASK_ID}, which will do runs ${START} to ${STOP}"
+
+for (( N = ${START}; N <= ${STOP}; N++ ))
+do
+	LINE=$(sed -n "$N"p ${args1})
+	
+	if [ ! -z "$LINE" ]
+	then
+		echo "This is SLURM job ${SLURM_ARRAY_JOB_ID} task ${SLURM_ARRAY_TASK_ID}, run number ${N}"
+		echo "File ${LINE}"
+
+		# Execute
+		args11="as.character('${LINE}')"   # cell html file with statistics
+		args22="as.numeric('3')"           # threshold to pass / not pass
+		args33="as.character('${args3}')"  # file where result will be collected
+		args44="as.character('${args2}')"
+		
+		Rscript --vanilla ${codedir}/03.0_QC_TrimGalore.R ${args11} ${args22} ${args33} ${args44}
+	fi
+done
+#-----------------------------------------------------------------------#
+
+# Collect standard output
+if [ ! -z "$SLURM_JOB_ID" ] && [ ! "$SLURM_JOB_NAME" = "_interactive" ]
+then
+	mv ${SLURM_JOB_NAME}_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.stdout ${logdir}
+	echo "LOG FILES ARE IN:"
+	echo "${logdir}${SLURM_JOB_NAME}_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.stdout"
+fi

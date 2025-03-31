@@ -1,0 +1,135 @@
+#!/bin/bash
+
+#SBATCH -A sens2018122
+#SBATCH -p core
+#SBATCH -n 2
+#SBATCH -t 05:00:00
+#SBATCH --mail-user=maria.arceo@ki.se
+#SBATCH --mail-type=ALL
+#SBATCH -J xxxx                  #### REMEMBER TO KEEP UPDATED ####
+#SBATCH --output=xxxx_%J.stdout    #### REMEMBER TO KEEP UPDATED ####
+#---------------------------------------------------------------------#
+
+# Load software modules
+#module purge # cleaning
+module load bioinfo-tools
+module load cutadapt/2.3
+module load FastQC/0.11.8
+module load TrimGalore/0.6.1
+#---------------------------------------------------------------------#
+
+# slurm arguments
+if [ ! -z "$SLURM_JOB_ID" ] && [ ! "$SLURM_JOB_NAME" = "_interactive" ]
+then
+	START=${SLURM_ARRAY_TASK_ID}
+	NUMLINES=${NUMLINES}
+	STOP=$((SLURM_ARRAY_TASK_ID*NUMLINES))
+	START="$(($STOP - $(($NUMLINES - 1))))"
+	
+	echo "JOB_NAME=${SLURM_JOB_NAME}"
+	echo "JOB_ID=${SLURM_ARRAY_JOB_ID}"
+	echo "TASK_ID=${SLURM_ARRAY_TASK_ID}"
+	echo "LINE START=${START}"
+	echo "LINE STOP=${STOP}"
+fi
+#-----------------------------------------------------------------------#
+
+# EXPORTED VARIABLES
+args1="${args1}"
+#------------------------------------------------------------------------#
+
+# Code and logs directories
+codedir="${codedir}"
+logdir="${logdir}/"
+outdir="${outdir}/"
+lognm="${lognm}" 
+#-----------------------------------------------------------------------#
+
+# Print arguments passed
+var_=$( echo "$(compgen -v | grep -i args -)" )
+read -d " " -a  var_array <<< "$var_"
+echo "VARIABLES EXPORTED:"
+for i in ${var_array[@]}
+do
+eval temp='$'$i
+echo "$i: $temp"
+done
+unset var_ var_array i temp
+#-----------------------------------------------------------------------#
+
+# Run
+echo "This is job ${SLURM_ARRAY_JOB_ID} task ${SLURM_ARRAY_TASK_ID}, which will do runs ${START} to ${STOP}"
+
+for (( N = ${START}; N <= ${STOP}; N++ ))
+do
+	LINE=$(sed -n "$N"p ${args1})
+	
+	if [ ! -z "$LINE" ]
+	then
+		echo "This is SLURM job ${SLURM_ARRAY_JOB_ID} task ${SLURM_ARRAY_TASK_ID}, run number ${N}"
+		echo "File ${LINE}"
+
+		CELL=$( echo ${LINE%/*}  )  # keep updated
+		CELL=$( echo "${CELL##*/}" )
+
+		SAMPLE=$( echo ${LINE%/rawdata*}  )  # keep updated
+		SAMPLE=$( echo "${SAMPLE##*/}" )
+
+
+		# Create ouptut directories
+		mkdir -p ${outdir}${SAMPLE}/${CELL}
+
+		# Execute
+		outf="${outdir}${SAMPLE}/${CELL}/"
+		inf="${LINE}"
+		trim_galore --fastqc --phred64 --dont_gzip -o ${outf} ${inf}
+	fi        
+done
+unset CELL SAMPLE outf inf
+
+# Checkings
+oldd=$PWD
+
+for (( N = ${START}; N <= ${STOP}; N++ ))
+do
+	LINE=$(sed -n "$N"p ${args1})
+	
+	if [ ! -z "$LINE" ]
+	then
+		CELL=$( echo ${LINE%/*}  )  # keep updated
+		CELL=$( echo "${CELL##*/}" )
+
+		SAMPLE=$( echo ${LINE%/rawdata*}  )  # keep updated
+		SAMPLE=$( echo "${SAMPLE##*/}" )
+
+		outf1="${outdir}${SAMPLE}/${CELL}/"
+		if [ ! -e ${outf1}${CELL}_R1.fastq.gz_trimming_report.txt ]
+		then
+			cd ${outdir}${SAMPLE}
+			tar -cvzf NOTPASS-${CELL}.tar.gz ${CELL}/ && rm -r ${CELL}/
+			echo "${outdir}${SAMPLE}/${CELL}" >> ${logdir}CELLS-NOTPASS
+			cd $oldd
+		else
+			#errorv=$(grep -w 'ERROR||error||WARNING||warning' ${outf1}${CELL}_R1.fastq.gz_trimming_report.txt )
+			finv=$(grep -w 'Finished' ${outf1}${CELL}_R1.fastq.gz_trimming_report.txt )
+			if [ -z "${finv}" ]
+			then
+				cd ${outdir}${SAMPLE}
+				tar -cvzf NOTPASS-${CELL}.tar.gz ${CELL}/ && rm -r ${CELL}/
+				echo "${outdir}${SAMPLE}/${CELL}" >> ${logdir}CELLS-NOTPASS
+				cd $oldd
+			fi
+		fi
+	fi
+done
+
+#-----------------------------------------------------------------------#
+
+# Collect standard output
+if [ ! -z "$SLURM_JOB_ID" ] && [ ! "$SLURM_JOB_NAME" = "_interactive" ]
+then
+	mv ${SLURM_JOB_NAME}_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.stdout ${logdir}
+	echo "LOG FILES ARE IN:"
+	echo "${logdir}${SLURM_JOB_NAME}_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.stdout"
+fi
+
