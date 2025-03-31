@@ -13,7 +13,7 @@ Here I:
    counts: with HTSEQ      
    TPM: with RSEM  
 
-I start with FASTQ files and end with an expression matrix   
+I start with FASTQ files and end with an expression matrix. Note that in this pippeline each cell has a different FASTQ file and they are NOT merged   
 Execute scripts following the numbered order. In general, you execute *.sh that will in turn create all necesessary directories and call and execute *.run (in a sbatch manner)   
 
 
