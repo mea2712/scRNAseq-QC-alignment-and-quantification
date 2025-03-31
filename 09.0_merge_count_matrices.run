@@ -1,0 +1,118 @@
+#!/bin/bash
+
+#SBATCH -A sens2018122
+#SBATCH -p core
+#SBATCH -n 2
+#SBATCH -t 00:00:00
+#SBATCH --mail-user=maria.arceo@ki.se
+#SBATCH --mail-type=ALL
+#SBATCH -J xxxxx_                   #### REMEMBER TO KEEP UPDATED ####
+#SBATCH --output=xxxxx_%J.stdout    #### REMEMBER TO KEEP UPDATED ####
+#---------------------------------------------------------------------#
+dstart=$(date +"%Y/%m/%d %H:%M:%S")
+SECONDS=0
+#---------------------------------------------------------------------#
+
+# Load software modules
+module load R/4.0.4
+module load R_packages/4.0.4
+#---------------------------------------------------------------------#
+
+# slurm arguments
+if [ ! -z "$SLURM_JOB_ID" ] && [ ! "$SLURM_JOB_NAME" = "_interactive" ]
+then
+	START=${SLURM_ARRAY_TASK_ID}
+	NUMLINES=${NUMLINES}
+	STOP=$((SLURM_ARRAY_TASK_ID*NUMLINES))
+	START="$(($STOP - $(($NUMLINES - 1))))"
+	
+	echo "JOB_NAME=${SLURM_JOB_NAME}"
+	echo "JOB_ID=${SLURM_ARRAY_JOB_ID}"
+	echo "TASK_ID=${SLURM_ARRAY_TASK_ID}"
+	echo "LINE START=${START}"
+	echo "LINE STOP=${STOP}"
+fi
+#-----------------------------------------------------------------------#
+
+# EXPORTED VARIABLES
+args1="${args1}"
+#-----------------------------------------------------------------------#
+
+# Code and logs directories
+codedir="${codedir}"
+logdir="${logdir}/"
+outdir="${outdir}/"  ## args2
+lognm="${lognm}"  ## args3
+#-----------------------------------------------------------------------#
+
+# Print arguments passed
+var_=$( echo "$(compgen -v | grep -i args -)" )
+read -d " " -a  var_array <<< "$var_"
+echo "VARIABLES EXPORTED:"
+for i in ${var_array[@]}
+do
+eval temp='$'$i
+echo "$i: $temp"
+done
+unset var_ var_array i temp
+#-----------------------------------------------------------------------#
+
+# Run
+echo "This is job ${SLURM_ARRAY_JOB_ID} task ${SLURM_ARRAY_TASK_ID}"
+echo "It will merge the following files:"
+
+# Get subset of file paths
+args99=($( sed -n "${START},${STOP}p" ${args1}))
+for i in "${args99[@]}"; do echo ${i}; done
+unset i
+
+# Create temp output directories
+outdir1="${outdir}/${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}/"
+mkdir -p ${outdir1}
+
+# Format
+# .. Get htseq count files for each HQ cell
+# .. Remove last 5 rows
+# .. Sort based on transcript names
+# .. add colums names
+for i in "${args99[@]}"
+do
+	# Get each cell's sample
+	sample=${i%/*}
+	sample=${sample%/*}
+	sample=${sample##*/}
+
+	# Get each cell
+	cell=${i%/}
+	cell=${cell%/*}
+	cell=${cell##*/}
+
+	# Get IDs
+	id="${sample}.${cell}"
+
+	# Write temp files
+	echo -e "TRANSCRIPT\t${id}" > ${outdir1}/${id}_htseq_formatted.counts
+	head -n -5 ${i} | sort -k1 >> ${outdir1}/${id}_htseq_formatted.counts
+done
+
+args11="as.character('${outdir1}')"
+lognm1="as.character('${lognm}')"
+Rscript --vanilla ${codedir}09.0_merge_count_matrices.R ${args11} ${lognm1} > ${logdir}${SLURM_JOB_NAME}_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.ROUT
+#-----------------------------------------------------------------------#
+
+DURATION=$SECONDS
+dend=$(date +"%Y/%m/%d %H:%M:%S")
+
+echo "START TIME: ${dstart}"
+echo "END TIME: ${dend}"
+echo "RUNTIME: $(($DURATION / 3600))h $((($DURATION / 60) %60))m $(($DURATION % 60))s"
+#-----------------------------------------------------------------------#
+
+# Collect standard output
+if [ ! -z "$SLURM_JOB_ID" ] && [ ! "$SLURM_JOB_NAME" = "_interactive" ]
+then
+	mv ${SLURM_JOB_NAME}_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.stdout ${logdir}
+	echo "LOG FILES ARE IN:"
+	echo "${logdir}${SLURM_JOB_NAME}_${SLURM_ARRAY_JOB_ID}_${SLURM_ARRAY_TASK_ID}.stdout"
+fi
+#-----------------------------------------------------------------------#
